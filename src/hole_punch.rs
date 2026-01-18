@@ -101,9 +101,6 @@ fn create_hole_punch_socket() -> Result<Socket> {
     // Disable Nagle for faster small packet transmission
     socket.set_nodelay(true)?;
     
-    // Set linger to ensure clean socket closure
-    socket.set_linger(Some(Duration::from_secs(0)))?;
-    
     Ok(socket)
 }
 
@@ -214,10 +211,8 @@ async fn run_hole_punch(
                     break;
                 }
                 Err(e) => {
-                    if e.kind() != std::io::ErrorKind::WouldBlock {
-                        debug!("Accept error: {}", e);
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    debug!("Accept error: {}", e);
+                    break;
                 }
             }
         }
@@ -231,11 +226,6 @@ async fn run_hole_punch(
         let port_num = idx + 1;
         
         tokio::spawn(async move {
-            // Stagger start slightly to avoid overwhelming the network
-            if idx > 0 {
-                tokio::time::sleep(Duration::from_millis(50 * idx as u64)).await;
-            }
-            
             let mut attempt = 0;
             let connector_timeout = timeout;
             let connector_start = Instant::now();
