@@ -143,6 +143,11 @@ These papers and implementations informed the NAT probing and prediction approac
 - Simon Keller, Tobias Hossfeld, Sebastian von Mammen. "Edge-Case Integration into Established NAT Traversal Techniques." IEEE ICCE 2022. https://downloads.hci.informatik.uni-wuerzburg.de/2022-icce-keller.pdf
 - Chongyc/natblaster (GitHub). https://github.com/chongyc/natblaster
 
+Influence summary (high level):
+- Multi-probe port prediction and bounded scan lists for CGN/LSN-style NATs.
+- Progressing vs random symmetric NAT handling, including rate-based forward shift and heuristics.
+- Practical scanning strategies and implementation patterns for NAT probing.
+
 ## License
 
 MIT
