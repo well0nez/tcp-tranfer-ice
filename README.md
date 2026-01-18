@@ -2,6 +2,8 @@
 
 High-performance TCP file transfer with NAT traversal (hole punching).
 
+A TCP file-transfer tool with NAT traversal (TCP hole punching) coordinated by a lightweight relay. It probes NAT behavior to build a bounded port candidate list, improving success against tricky NAT types without relaying traffic. Once connected, it uses direct P2P TCP with SHA256 integrity checks for reliable transfer.
+
 ## Features
 
 - **TCP Hole Punching**: Establishes direct peer-to-peer TCP connections through NAT
