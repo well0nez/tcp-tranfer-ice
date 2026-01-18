@@ -136,11 +136,12 @@ Use `--debug` for detailed logging.
 
 ## References
 
-These papers informed the NAT probing and prediction approach:
+These papers and implementations informed the NAT probing and prediction approach:
 
-- Kazuhiro Tobe, Akihiro Shimoda, Shigeki Goto. "Extended UDP Multiple Hole Punching Method to Traverse Large Scale NATs."
-- Daniel Maier, Oliver Haase, Juergen Waesch, Marcel Waldvogel. "NAT Hole Punching Revisited." Technical Report No. KN-2011-DiSy-02.
-- Simon Keller, Tobias Hossfeld, Sebastian von Mammen. "Edge-Case Integration into Established NAT Traversal Techniques." IEEE ICCE 2022.
+- Kazuhiro Tobe, Akihiro Shimoda, Shigeki Goto. "Extended UDP Multiple Hole Punching Method to Traverse Large Scale NATs." https://pdfs.semanticscholar.org/953d/438516e9b2eb2bf35528de3e1fb0e9b164f8.pdf
+- Daniel Maier, Oliver Haase, Juergen Waesch, Marcel Waldvogel. "NAT Hole Punching Revisited." Technical Report No. KN-2011-DiSy-02. https://kops.uni-konstanz.de/server/api/core/bitstreams/29a35a1d-40f1-4290-9d03-dae21f2b9c36/content
+- Simon Keller, Tobias Hossfeld, Sebastian von Mammen. "Edge-Case Integration into Established NAT Traversal Techniques." IEEE ICCE 2022. https://downloads.hci.informatik.uni-wuerzburg.de/2022-icce-keller.pdf
+- Chongyc/natblaster (GitHub). https://github.com/chongyc/natblaster
 
 ## License
 
