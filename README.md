@@ -126,7 +126,7 @@ TCP hole punching is more difficult than UDP and may not work with all NAT types
 
 If hole punching fails, consider:
 1. Using a TURN-style relay fallback
-2. Using the UDP version which has better NAT traversal
+2. Retrying multiple times for random-port or symmetric NATs (success can be probabilistic)
 
 ### Connection timeout
 
