@@ -106,15 +106,14 @@ The binary will be at `target/release/tcp-transfer`.
 
 Note: This repo does not include a UDP implementation; the comparison is conceptual.
 
-| Feature | UDP Transfer | TCP Transfer |
-|---------|-------------|--------------|
-| Protocol | Custom reliable UDP | TCP (built-in reliability) |
-| Window Management | Yes (complex) | No (TCP handles it) |
-| ACK Messages | Every 100ms | Only for handshake |
-| Retransmission | Manual | TCP handles it |
-| Congestion Control | AIMD | TCP's built-in |
-| Code Complexity | High | Low |
-| Speed | Potentially faster | Reliable, consistent |
+| Aspect | UDP hole punching | TCP hole punching |
+|--------|-------------------|-------------------|
+| Transport state | Connectionless; mapping created by outbound packets | Connection-oriented; requires SYN exchange |
+| Timing sensitivity | More tolerant of timing skew | More sensitive; often needs simultaneous open |
+| NAT traversal difficulty | Generally easier across NAT types | Generally harder, especially with symmetric NATs |
+| Reliability/ordering | Must be implemented by the application if needed | Built-in reliability, ordering, congestion control |
+| Probing cost | Lightweight probes to learn mappings | Probing uses TCP handshakes and is more rigid |
+| Success on symmetric NAT | Often needs prediction/relay | Often fails without prediction/relay |
 
 ## Troubleshooting
 
