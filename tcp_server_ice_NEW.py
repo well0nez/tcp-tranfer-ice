@@ -504,6 +504,13 @@ class TCPRelayServerICE:
     async def handle_probes_complete(self, peer: Peer):
         """Handle probes_complete message from client"""
         session_id = peer.session_id
+
+        # If probing was not needed, keep any existing analysis (e.g. port_preserved)
+        if not peer.needs_probing:
+            peer.probes_done = True
+            logger.info(f"Peer {peer.role} probes_done=True (no probing required)")
+            await self.try_send_peer_info(session_id)
+            return
         
         # Analyze probes if we have them
         if session_id in self.pending_probes:
@@ -521,20 +528,24 @@ class TCPRelayServerICE:
                 ]
             else:
                 logger.warning(f"No probes received from {peer.role}")
-                # Create basic analysis from registration
-                peer.nat_analysis = NATAnalysis(
-                    probed_ports=[peer.public_addr[1]],
-                    local_ports=[peer.local_port],
-                    min_port=peer.public_addr[1],
-                    max_port=peer.public_addr[1],
-                    port_range=0,
-                    predicted_port=peer.public_addr[1],
-                    error_range=0,
-                    pattern_type="insufficient_data",
-                    needs_scan=False,
-                    scan_start=peer.public_addr[1],
-                    scan_end=peer.public_addr[1],
-                )
+        else:
+            logger.warning(f"No probe list found for session {session_id}")
+
+        if not peer.nat_analysis:
+            # Create basic analysis from registration
+            peer.nat_analysis = NATAnalysis(
+                probed_ports=[peer.public_addr[1]],
+                local_ports=[peer.local_port],
+                min_port=peer.public_addr[1],
+                max_port=peer.public_addr[1],
+                port_range=0,
+                predicted_port=peer.public_addr[1],
+                error_range=0,
+                pattern_type="insufficient_data",
+                needs_scan=False,
+                scan_start=peer.public_addr[1],
+                scan_end=peer.public_addr[1],
+            )
         
         # Mark probing done
         peer.probes_done = True

@@ -212,7 +212,7 @@ async fn run_hole_punch(
                 }
                 Err(e) => {
                     debug!("Accept error: {}", e);
-                    break;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             }
         }
