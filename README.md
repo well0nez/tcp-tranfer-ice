@@ -5,7 +5,7 @@ High-performance TCP file transfer with NAT traversal (hole punching).
 ## Features
 
 - **TCP Hole Punching**: Establishes direct peer-to-peer TCP connections through NAT
-- **NAT Probing + Prediction**: Uses a probe port to narrow candidate external ports
+- **NAT Probing + Prediction**: Uses a probe port to predict a NAT port range and build a capped scan list
 - **SHA256 Verification**: Ensures file integrity after transfer
 - **Progress Bar**: Real-time transfer progress with speed display
 - **Session-Based**: Both peers connect using a shared session ID
@@ -17,6 +17,19 @@ High-performance TCP file transfer with NAT traversal (hole punching).
 3. Both peers attempt TCP hole punching simultaneously
 4. Once connected, the file is transferred directly peer-to-peer
 5. SHA256 verification ensures file integrity
+
+## Port Prediction and Scan Method
+
+The relay server runs a short NAT probing phase when a peer does not preserve ports:
+
+- The client opens several quick probe connections to `--probe-port`.
+- The server records the observed public ports and computes a prediction model:
+  - If ports are preserved, no scan is needed.
+  - Otherwise, it estimates a delta-based predicted port and an error range.
+  - For progressing symmetric NATs, it also estimates a port allocation rate and shifts the prediction forward.
+  - For random-like NATs, it uses the observed min/max range and builds a sparse candidate list.
+- The server sends `peer_info` with a prioritized candidate list of ports (capped by `MAX_SCAN_PORTS`).
+- The client tries only those candidates; this is a bounded scan, not a full port sweep.
 
 ## Usage
 
@@ -112,6 +125,14 @@ Increase the timeout: `--timeout 60`
 ### Debug mode
 
 Use `--debug` for detailed logging.
+
+## References
+
+These papers informed the NAT probing and prediction approach:
+
+- Kazuhiro Tobe, Akihiro Shimoda, Shigeki Goto. "Extended UDP Multiple Hole Punching Method to Traverse Large Scale NATs."
+- Daniel Maier, Oliver Haase, Juergen Waesch, Marcel Waldvogel. "NAT Hole Punching Revisited." Technical Report No. KN-2011-DiSy-02.
+- Simon Keller, Tobias Hossfeld, Sebastian von Mammen. "Edge-Case Integration into Established NAT Traversal Techniques." IEEE ICCE 2022.
 
 ## License
 
