@@ -15,6 +15,7 @@
 //!   Receive: tcp-transfer -s relay:port -i SESSION_ID -m receive
 //!   Send:    tcp-transfer -s relay:port -i SESSION_ID -m send -f file.mp4
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::time::Duration;
 use clap::{Parser, ValueEnum};
@@ -87,6 +88,10 @@ struct Args {
     /// Number of NAT probes to send (higher can improve symmetric/random NAT success)
     #[arg(long, default_value_t = DEFAULT_NAT_PROBE_COUNT)]
     probe_count: u32,
+
+    /// Run probe-only debug mode and print observed ports
+    #[arg(long)]
+    probe_debug: bool,
 
     /// NAT prediction mode: delta or external
     #[arg(long, value_enum, default_value_t = PredictionMode::Delta)]
@@ -582,6 +587,11 @@ async fn main() -> Result<()> {
         .with_file(false)
         .with_line_number(false)
         .init();
+
+    if args.probe_debug {
+        run_probe_debug(&args.server, &args.session_id, args.probe_count).await?;
+        return Ok(());
+    }
     
     // Parse and set chunk size
     let chunk_size = parse_chunk_size(&args.chunk)?;
@@ -650,5 +660,147 @@ async fn main() -> Result<()> {
                 args.prediction_range_extra_pct,
             ).await
         }
+    }
+}
+
+async fn run_probe_debug(server_addr: &str, session_id: &str, count: u32) -> Result<()> {
+    let probe_addr = derive_probe_addr(server_addr)?;
+
+    println!("PROBE DEBUG MODE");
+    println!("Server: {}", server_addr);
+    println!("Probe:  {}", probe_addr);
+    println!("Session: {}", session_id);
+    println!("Count: {}", count);
+    println!();
+
+    if count == 0 {
+        println!("No probes requested.");
+        return Ok(());
+    }
+
+    struct ProbeSample {
+        idx: u32,
+        local_port: u16,
+        nat_port: u16,
+        delta: i32,
+    }
+
+    let mut samples: Vec<ProbeSample> = Vec::new();
+    let mut failures = 0u32;
+
+    for i in 0..count {
+        match TcpStream::connect(probe_addr).await {
+            Ok(stream) => {
+                let local_port = stream.local_addr().map(|a| a.port()).unwrap_or(0);
+                let (reader, mut writer) = stream.into_split();
+                let mut reader = BufReader::new(reader);
+
+                let probe = ProbeMessage::new(session_id, local_port, i);
+                let msg = serde_json::to_string(&probe)? + "\n";
+                if writer.write_all(msg.as_bytes()).await.is_err() {
+                    failures += 1;
+                    continue;
+                }
+                let _ = writer.flush().await;
+
+                let mut line = String::new();
+                match tokio::time::timeout(Duration::from_secs(3), reader.read_line(&mut line)).await {
+                    Ok(Ok(0)) => {
+                        failures += 1;
+                    }
+                    Ok(Ok(_n)) => {
+                        let v: serde_json::Value = serde_json::from_str(&line)
+                            .map_err(|e| anyhow!("Failed to parse probe_ack: {}", e))?;
+                        let nat_port = v.get("your_nat_port").and_then(|p| p.as_u64())
+                            .ok_or_else(|| anyhow!("probe_ack missing your_nat_port"))? as u16;
+                        let delta = nat_port as i32 - local_port as i32;
+                        samples.push(ProbeSample { idx: i, local_port, nat_port, delta });
+                    }
+                    _ => {
+                        failures += 1;
+                    }
+                }
+            }
+            Err(_) => {
+                failures += 1;
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    if samples.is_empty() {
+        println!("No probe acknowledgements received.");
+        return Ok(());
+    }
+
+    println!("{:<4} {:>6} {:>6} {:>7}", "#", "local", "nat", "delta");
+    println!("{:-<4} {:-<6} {:-<6} {:-<7}", "", "", "", "");
+    for s in &samples {
+        println!("{:<4} {:>6} {:>6} {:+7}", s.idx, s.local_port, s.nat_port, s.delta);
+    }
+    println!();
+
+    let mut nat_ports: Vec<u16> = samples.iter().map(|s| s.nat_port).collect();
+    let mut deltas: Vec<i32> = samples.iter().map(|s| s.delta).collect();
+
+    let min_nat = *nat_ports.iter().min().unwrap();
+    let max_nat = *nat_ports.iter().max().unwrap();
+    let range_nat = max_nat - min_nat;
+
+    let min_delta = *deltas.iter().min().unwrap();
+    let max_delta = *deltas.iter().max().unwrap();
+    let median_delta = median_i32(&mut deltas);
+    let mean_delta = deltas.iter().map(|d| *d as f64).sum::<f64>() / deltas.len() as f64;
+    let var_delta = deltas.iter().map(|d| {
+        let diff = *d as f64 - mean_delta;
+        diff * diff
+    }).sum::<f64>() / deltas.len() as f64;
+    let stdev_delta = var_delta.sqrt();
+
+    let unique_nat: HashSet<u16> = nat_ports.iter().cloned().collect();
+    nat_ports.sort_unstable();
+
+    println!("NAT ports: min={} max={} range={} unique={}", min_nat, max_nat, range_nat, unique_nat.len());
+    println!("Delta: min={} max={} median={:.1} stdev={:.2}", min_delta, max_delta, median_delta, stdev_delta);
+    println!();
+
+    let nat_list = nat_ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ");
+    let mut deltas_sorted = deltas;
+    deltas_sorted.sort_unstable();
+    let delta_list = deltas_sorted.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(", ");
+
+    println!("NAT ports (sorted): {}", nat_list);
+    println!("Delta (sorted): {}", delta_list);
+    println!();
+    if failures > 0 {
+        println!("Probe failures: {}/{}", failures, count);
+    }
+
+    Ok(())
+}
+
+fn derive_probe_addr(server_addr: &str) -> Result<SocketAddr> {
+    let addr: SocketAddr = server_addr.parse()
+        .map_err(|_| anyhow!("Invalid server address: {}", server_addr))?;
+    let port = addr.port();
+    if port <= 1 {
+        return Err(anyhow!("Server port {} is too low to derive probe port", port));
+    }
+    Ok(SocketAddr::new(addr.ip(), port - 1))
+}
+
+fn median_i32(values: &mut Vec<i32>) -> f64 {
+    values.sort_unstable();
+    let len = values.len();
+    if len == 0 {
+        return 0.0;
+    }
+    if len % 2 == 1 {
+        values[len / 2] as f64
+    } else {
+        let a = values[(len / 2) - 1] as f64;
+        let b = values[len / 2] as f64;
+        (a + b) / 2.0
     }
 }

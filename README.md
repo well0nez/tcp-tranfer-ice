@@ -68,6 +68,17 @@ In practice, this can yield significantly better results when the true NAT ports
 a wider band than the probe-derived window. If delta or external prediction is too tight,
 raising this to around 20-50 can materially improve success rates.
 
+### Probe Debug Mode
+
+Use `--probe-debug` to run only the probe phase and print the observed local/NAT port pairs
+with summary stats (min/max/range/median/stdev). The probe port is derived as `server_port - 1`
+(for example, `--server 1.2.3.4:9999` probes `1.2.3.4:9998`).
+
+Example:
+```bash
+./tcp-transfer -s 1.2.3.4:9999 -i test -m receive --probe-debug --probe-count 25
+```
+
 ## Usage
 
 ### Prerequisites
@@ -108,6 +119,7 @@ Options:
   -f, --file <FILE>          File to send (sender mode only)
       --timeout <SECONDS>    Hole punch timeout [default: 30]
       --probe-count <N>      NAT probe connection count [default: 10]
+      --probe-debug          Run probe-only debug mode and print observed ports
       --prediction-mode <MODE>  NAT prediction mode: delta or external [default: delta]
       --prediction-range-extra-pct <PCT>  Expand scan range by percentage [default: 0]
       --debug                Enable debug logging
