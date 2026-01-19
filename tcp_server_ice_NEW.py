@@ -118,11 +118,13 @@ class TCPRelayServerICE:
         port: int = 9999,
         probe_port: int = 9998,
         max_scan_ports: int = MAX_SCAN_PORTS,
+        external_only: bool = False,
     ):
         self.host = host
         self.port = port
         self.probe_port = probe_port
         self.max_scan_ports = max(1, max_scan_ports)
+        self.external_only = external_only
         self.sessions: Dict[str, Dict[str, Peer]] = {}
         self.session_locks: Dict[str, asyncio.Lock] = {}
         # Probe connections waiting to be claimed
@@ -210,7 +212,11 @@ class TCPRelayServerICE:
         """Analyze NAT behavior and predict the peer-facing port range."""
         analysis = NATAnalysis()
 
-        if len(probes) < 2 or target_local_port <= 0:
+        if len(probes) < 2:
+            analysis.pattern_type = "insufficient_data"
+            return analysis
+
+        if not self.external_only and target_local_port <= 0:
             analysis.pattern_type = "insufficient_data"
             return analysis
 
@@ -230,7 +236,7 @@ class TCPRelayServerICE:
             for nat, local in zip(analysis.probed_ports, analysis.local_ports)
         )
 
-        if preserved:
+        if preserved and target_local_port > 0:
             analysis.pattern_type = "port_preserved"
             analysis.needs_scan = False
             analysis.predicted_port = max(MIN_PORT, min(MAX_PORT, target_local_port))
@@ -239,27 +245,37 @@ class TCPRelayServerICE:
             logger.info("NAT Analysis: port preserved (no scan needed)")
             return analysis
 
-        # Delta-based prediction (nat_port - local_port)
-        deltas = [
-            nat - local
-            for nat, local in zip(analysis.probed_ports, analysis.local_ports)
-            if local > 0
-        ]
-        if not deltas:
-            analysis.pattern_type = "insufficient_data"
-            return analysis
+        if self.external_only:
+            mean_port = statistics.mean(analysis.probed_ports)
+            predicted = int(round(mean_port))
+            analysis.predicted_port = max(MIN_PORT, min(MAX_PORT, predicted))
 
-        analysis.delta_min = min(deltas)
-        analysis.delta_max = max(deltas)
-        analysis.delta_median = statistics.median(deltas)
-        analysis.delta_stdev = statistics.pstdev(deltas) if len(deltas) > 1 else 0.0
+            max_dev = max(abs(p - mean_port) for p in analysis.probed_ports)
+            stdev = statistics.pstdev(analysis.probed_ports) if len(analysis.probed_ports) > 1 else 0.0
+            jitter = max(2, int(round(stdev * 2)))
+            analysis.error_range = int(round(max_dev + jitter))
+        else:
+            # Delta-based prediction (nat_port - local_port)
+            deltas = [
+                nat - local
+                for nat, local in zip(analysis.probed_ports, analysis.local_ports)
+                if local > 0
+            ]
+            if not deltas:
+                analysis.pattern_type = "insufficient_data"
+                return analysis
 
-        predicted = int(round(target_local_port + analysis.delta_median))
-        analysis.predicted_port = max(MIN_PORT, min(MAX_PORT, predicted))
+            analysis.delta_min = min(deltas)
+            analysis.delta_max = max(deltas)
+            analysis.delta_median = statistics.median(deltas)
+            analysis.delta_stdev = statistics.pstdev(deltas) if len(deltas) > 1 else 0.0
 
-        max_dev = max(abs(d - analysis.delta_median) for d in deltas)
-        jitter = max(2, int(round(analysis.delta_stdev * 2)))
-        analysis.error_range = int(round(max_dev + jitter))
+            predicted = int(round(target_local_port + analysis.delta_median))
+            analysis.predicted_port = max(MIN_PORT, min(MAX_PORT, predicted))
+
+            max_dev = max(abs(d - analysis.delta_median) for d in deltas)
+            jitter = max(2, int(round(analysis.delta_stdev * 2)))
+            analysis.error_range = int(round(max_dev + jitter))
 
         analysis.prediction_delay = PREDICTION_DELAY_SEC
         analysis.port_rate = 0.0
@@ -291,6 +307,34 @@ class TCPRelayServerICE:
         analysis.scan_start = max(MIN_PORT, analysis.predicted_port - analysis.error_range)
         analysis.scan_end = min(MAX_PORT, analysis.predicted_port + analysis.error_range)
         analysis.needs_scan = analysis.error_range > 0
+
+        if self.external_only:
+            if analysis.port_range == 0:
+                analysis.pattern_type = "constant"
+                analysis.needs_scan = False
+                analysis.error_range = 0
+                analysis.scan_start = analysis.predicted_port
+                analysis.scan_end = analysis.predicted_port
+            elif analysis.error_range <= 5:
+                analysis.pattern_type = "small_range"
+            elif analysis.error_range <= 30:
+                analysis.pattern_type = "medium_range"
+            elif analysis.error_range <= 100:
+                analysis.pattern_type = "large_range"
+            else:
+                analysis.pattern_type = "random_like"
+                analysis.scan_start = max(MIN_PORT, analysis.min_port)
+                analysis.scan_end = min(MAX_PORT, analysis.max_port)
+                analysis.needs_scan = True
+
+            logger.info(
+                "NAT Analysis (external): predicted=%s range=%s-%s",
+                analysis.predicted_port,
+                analysis.scan_start,
+                analysis.scan_end,
+            )
+
+            return analysis
 
         delta_spread = analysis.delta_max - analysis.delta_min
         if delta_spread == 0:
@@ -797,6 +841,11 @@ async def main():
         default=MAX_SCAN_PORTS,
         help=f'Max candidate ports to send to clients (default: {MAX_SCAN_PORTS})',
     )
+    parser.add_argument(
+        '--external-only',
+        action='store_true',
+        help='Predict using only observed public ports (no local-port delta)',
+    )
     args = parser.parse_args()
 
     if args.max_scan_ports < 1:
@@ -807,6 +856,7 @@ async def main():
         args.port,
         args.probe_port,
         max_scan_ports=args.max_scan_ports,
+        external_only=args.external_only,
     )
     await server.start()
 

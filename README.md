@@ -52,6 +52,14 @@ NAT because the peer-specific NAT port may lie outside the small probe-derived r
 In our tests, setting `--max-scan-ports 512` reached roughly 99% success on difficult NAT pairs, but
 results depend on the networks and devices involved.
 
+### External-Only Prediction
+
+Use `--external-only` to predict from the observed public ports only (mean + deviation), without using
+local-port deltas. This can help when symmetric/random NATs allocate ports in a target-dependent way.
+
+- Pros: Can stabilize prediction when local-port deltas are noisy or misleading.
+- Cons: Ignores local-port correlation; may reduce accuracy on stable delta NATs.
+
 ## Usage
 
 ### Prerequisites
@@ -68,6 +76,7 @@ Relay server options:
   --port <PORT>             Main port [default: 9999]
   --probe-port <PORT>       Probe port for NAT analysis [default: 9998]
   --max-scan-ports <N>      Max candidate ports sent to clients [default: 128]
+  --external-only           Predict using only observed public ports
 ```
 
 ### Receiver (start first)
