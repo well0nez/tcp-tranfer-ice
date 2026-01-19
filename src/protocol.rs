@@ -1,4 +1,4 @@
-//! Protocol messages for TCP relay server communication v2.0
+//! Protocol messages for TCP relay server communication
 //!
 //! The relay server uses JSON messages over TCP (newline-delimited)
 //! 

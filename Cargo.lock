@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "tcp-transfer-ice"
-version = "2.0.0"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "bytes",

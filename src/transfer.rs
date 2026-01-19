@@ -1,4 +1,4 @@
-//! TCP File Transfer Implementation - Optimized v2.3 HIGH-THROUGHPUT
+//! TCP File Transfer Implementation - Optimized HIGH-THROUGHPUT
 //!
 //! Optimizations:
 //! - CHUNK_SIZE: 2MB (configurable via --chunk) - fewer syscalls

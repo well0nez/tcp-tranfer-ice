@@ -1,4 +1,4 @@
-//! TCP File Transfer Client with NAT Traversal v2.0
+//! TCP File Transfer Client with NAT Traversal
 //!
 //! This client uses TCP hole punching to establish direct peer-to-peer
 //! connections through NAT, then transfers files using TCP streams.
@@ -35,6 +35,7 @@ use transfer::{TcpSender, TcpReceiver, calculate_sha256, set_chunk_size};
 
 /// Number of NAT probes to send
 const DEFAULT_NAT_PROBE_COUNT: u32 = 10;
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Mode {
@@ -45,8 +46,8 @@ enum Mode {
 #[derive(Parser, Debug)]
 #[command(name = "tcp-transfer")]
 #[command(author = "TCP Transfer Team")]
-#[command(version = "3.5.0")]
-#[command(about = "TCP file transfer with NAT traversal (hole punching) v2.0")]
+#[command(version)]
+#[command(about = "TCP file transfer with NAT traversal (hole punching)")]
 struct Args {
     /// Relay server address (host:port)
     #[arg(short, long)]
@@ -543,7 +544,7 @@ async fn main() -> Result<()> {
     }
     set_chunk_size(chunk_size);
     
-    info!("TCP File Transfer Client v3.5 (ICE)");
+    info!("TCP File Transfer Client v{} (ICE)", APP_VERSION);
     info!("===================================");
     debug!("Chunk: {} KB | Buffer: 8MB | TCP Buffer: 16MB", chunk_size / 1024);
     

@@ -1,4 +1,4 @@
-//! TCP Hole Punching Implementation v2.0
+//! TCP Hole Punching Implementation
 //!
 //! TCP hole punching requires "simultaneous open" - both peers must try to 
 //! connect at EXACTLY the same time. This is achieved by:
