@@ -16,7 +16,7 @@
 //!   Send:    tcp-transfer -s relay:port -i SESSION_ID -m send -f file.mp4
 
 use std::collections::HashSet;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 use clap::{Parser, ValueEnum};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -149,12 +149,54 @@ struct Session {
     port_preserved: bool,
 }
 
+fn parse_host_port(input: &str) -> Result<(String, u16)> {
+    let input = input.trim();
+    if input.starts_with('[') {
+        let end = input.find(']').ok_or_else(|| anyhow!("Invalid address '{}': missing closing ']'", input))?;
+        let host = &input[1..end];
+        let rest = &input[end + 1..];
+        if !rest.starts_with(':') {
+            return Err(anyhow!("Invalid address '{}': expected [host]:port", input));
+        }
+        let port_str = &rest[1..];
+        if host.is_empty() || port_str.is_empty() {
+            return Err(anyhow!("Invalid address '{}': expected [host]:port", input));
+        }
+        let port = port_str.parse::<u16>()
+            .map_err(|_| anyhow!("Invalid port in address '{}'", input))?;
+        return Ok((host.to_string(), port));
+    }
+
+    let idx = input.rfind(':')
+        .ok_or_else(|| anyhow!("Invalid address '{}': expected host:port", input))?;
+    let host = &input[..idx];
+    let port_str = &input[idx + 1..];
+    if host.is_empty() || port_str.is_empty() {
+        return Err(anyhow!("Invalid address '{}': expected host:port", input));
+    }
+    if host.contains(':') {
+        return Err(anyhow!("Invalid address '{}': IPv6 must be in [addr]:port format", input));
+    }
+    let port = port_str.parse::<u16>()
+        .map_err(|_| anyhow!("Invalid port in address '{}'", input))?;
+    Ok((host.to_string(), port))
+}
+
+fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
+    let mut addrs = (host, port).to_socket_addrs()
+        .map_err(|e| anyhow!("Failed to resolve '{}': {}", host, e))?;
+    addrs.next()
+        .ok_or_else(|| anyhow!("Failed to resolve '{}': no addresses found", host))
+}
+
+fn resolve_socket_addr(input: &str) -> Result<SocketAddr> {
+    let (host, port) = parse_host_port(input)?;
+    resolve_host_port(&host, port)
+}
+
 /// Do NAT probing - send multiple connections to probe server to determine port range
-async fn do_nat_probing(probe_addr: &str, session_id: &str, count: u32) -> Result<()> {
+async fn do_nat_probing(probe_addr: SocketAddr, session_id: &str, count: u32) -> Result<()> {
     info!("🔍 Starting NAT probing ({} connections to {})...", count, probe_addr);
-    
-    let probe_addr: SocketAddr = probe_addr.parse()
-        .map_err(|_| anyhow!("Invalid probe address: {}", probe_addr))?;
     
     let mut successful = 0;
     
@@ -243,8 +285,7 @@ async fn run_relay_protocol(
     info!("Connecting to relay server: {}", server_addr);
     
     // CRITICAL FIX: Connect FROM the local_port so NAT mapping matches hole punch!
-    let server_sock_addr: SocketAddr = server_addr.parse()
-        .map_err(|_| anyhow!("Invalid server address: {}", server_addr))?;
+    let server_sock_addr = resolve_socket_addr(server_addr)?;
     
     let socket = create_bound_socket(local_port)?;
     socket.set_nonblocking(true)?;
@@ -361,11 +402,9 @@ async fn run_relay_protocol(
                     if needs_probe {
                         if let Some(pp) = probe_port {
                             // Build probe server address using the relay server IP
-                            if let Ok(server_sock_addr) = server_addr.parse::<SocketAddr>() {
-                                let probe_addr = format!("{}:{}", server_sock_addr.ip(), pp);
-                                if let Err(e) = do_nat_probing(&probe_addr, session_id, probe_count).await {
-                                    warn!("NAT probing failed: {} - continuing anyway", e);
-                                }
+                            let probe_addr = SocketAddr::new(server_sock_addr.ip(), pp);
+                            if let Err(e) = do_nat_probing(probe_addr, session_id, probe_count).await {
+                                warn!("NAT probing failed: {} - continuing anyway", e);
                             }
                         }
                     }
@@ -800,13 +839,12 @@ async fn run_probe_debug(server_addr: &str, session_id: &str, count: u32) -> Res
 }
 
 fn derive_probe_addr(server_addr: &str) -> Result<SocketAddr> {
-    let addr: SocketAddr = server_addr.parse()
-        .map_err(|_| anyhow!("Invalid server address: {}", server_addr))?;
-    let port = addr.port();
+    let (host, port) = parse_host_port(server_addr)?;
     if port <= 1 {
         return Err(anyhow!("Server port {} is too low to derive probe port", port));
     }
-    Ok(SocketAddr::new(addr.ip(), port - 1))
+    let resolved = resolve_host_port(&host, port)?;
+    Ok(SocketAddr::new(resolved.ip(), port - 1))
 }
 
 fn median_i32(values: &mut Vec<i32>) -> f64 {
